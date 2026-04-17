@@ -1,10 +1,9 @@
 'use strict'
-
 const fp = require('fastify-plugin')
 
 module.exports = fp(async function (fastify, opts) {
     fastify.register(require('@fastify/jwt'), {
-        secret: process.env.JWT_SECRET || 'uma-senha-muito-secreta-123'
+        secret: process.env.JWT_SECRET || 'chave-secreta-projeto-2026'
     })
 
     fastify.decorate('authenticate', async function (request, reply) {
@@ -14,4 +13,4 @@ module.exports = fp(async function (fastify, opts) {
             reply.send(err)
         }
     })
-})
+}, { name: 'auth-plugin' })

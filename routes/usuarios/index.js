@@ -1,5 +1,9 @@
 'use strict'
 
+const { trace } = require('@opentelemetry/api');
+
+const tracer = trace.getTracer('fastify-learning', '1.0.0');
+
 module.exports = async function (fastify, opts) {
     const userSchema = {
         type: 'object',
@@ -24,35 +28,47 @@ module.exports = async function (fastify, opts) {
         }
     }, async function (request, reply) {
         const { id } = request.params
-        const cacheKey = `user:${id}`
 
-        // Tenta buscar no Redis (Cache)
-        try {
-            const cachedUser = await fastify.redis.get(cacheKey)
-            if (cachedUser) {
-                fastify.log.info({ cache: true }, 'Cache Hit!')
-                return JSON.parse(cachedUser)
+        return tracer.startActiveSpan('usuarios.buscar_detalhes', async (span) => {
+            try {
+                span.setAttribute('usuario.id_buscado', id)
+                span.setAttribute('http.user_agent', request.headers['user-agent'])
+
+                // Cache com Redis
+                const cacheKey = `user:${id}`
+                const cachedUser = await fastify.redis.get(cacheKey)
+
+                if (cachedUser) {
+                    span.addEvent('cache_hit', { key: cacheKey })
+                    return JSON.parse(cachedUser)
+                }
+
+                span.addEvent('cache_miss')
+
+                // Consulta no banco de dados
+                const { rows } = await fastify.pg.query(
+                    'SELECT id, nome, email FROM usuarios WHERE id = $1', [id]
+                )
+
+                if (rows.length === 0) {
+                    span.setStatus({ code: SpanStatusCode.ERROR, message: 'Usuário inexistente' })
+                    return reply.code(404).send({ error: 'Usuário não encontrado' })
+                }
+
+                const usuario = rows[0]
+
+                // Salva no cache para a próxima vez
+                await fastify.redis.set(cacheKey, JSON.stringify(usuario), 'EX', 3600)
+
+                return usuario
+
+            } catch (err) {
+                span.recordException(err)
+                span.setStatus({ code: SpanStatusCode.ERROR, message: err.message })
+                throw err
+            } finally {
+                span.end()
             }
-        } catch (err) {
-            // Se o Redis falhar, não quebra a API (Failover)
-            fastify.log.error('Redis Error:', err)
-        }
-
-        // Se não estiver no cache, busca no Postgres
-        const { rows } = await fastify.pg.query(
-            'SELECT id, nome, email FROM usuarios WHERE id = $1', [id]
-        )
-
-        if (rows.length === 0) {
-            return reply.code(404).send({ error: 'Usuário não encontrado' })
-        }
-
-        const user = rows[0]
-
-        // Salva no Redis para a próxima vez (expira em 1 hora - 3600s)
-        await fastify.redis.set(cacheKey, JSON.stringify(user), 'EX', 3600)
-
-        fastify.log.info({ cache: false }, 'Cache Miss - Database loaded')
-        return user
+        })
     })
 }
