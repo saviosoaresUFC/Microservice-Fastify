@@ -6,7 +6,7 @@ module.exports = fp(async function (fastify, opts) {
     await fastify.register(require('@fastify/swagger'), {
         openapi: {
             info: {
-                title: 'ArenaHub Microservice',
+                title: 'Fastify Learning',
                 description: 'Documentação da API de aprendizado',
                 version: '0.1.0'
             }

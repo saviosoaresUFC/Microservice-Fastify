@@ -59,3 +59,4 @@ profile*
 
 .env
 package-lock.json
+/generated/prisma

@@ -1,8 +1,7 @@
 'use strict'
 
-const { trace } = require('@opentelemetry/api');
-
-const tracer = trace.getTracer('fastify-learning', '1.0.0');
+const { trace, SpanStatusCode } = require('@opentelemetry/api')
+const tracer = trace.getTracer('fastify-learning', '1.0.0')
 
 module.exports = async function (fastify, opts) {
     const userSchema = {
@@ -17,10 +16,10 @@ module.exports = async function (fastify, opts) {
     fastify.get('/:id', {
         onRequest: [fastify.authenticate],
         schema: {
-            description: 'Busca um usuário no banco e faz cache no Redis',
+            description: 'Busca um usuário no banco via Prisma e faz cache no Redis',
             params: {
                 type: 'object',
-                properties: { id: { type: 'string' } }
+                properties: { id: { type: 'integer' } }
             },
             response: {
                 200: userSchema
@@ -32,9 +31,8 @@ module.exports = async function (fastify, opts) {
         return tracer.startActiveSpan('usuarios.buscar_detalhes', async (span) => {
             try {
                 span.setAttribute('usuario.id_buscado', id)
-                span.setAttribute('http.user_agent', request.headers['user-agent'])
 
-                // Cache com Redis
+                // Tenta o Cache no Redis
                 const cacheKey = `user:${id}`
                 const cachedUser = await fastify.redis.get(cacheKey)
 
@@ -45,21 +43,22 @@ module.exports = async function (fastify, opts) {
 
                 span.addEvent('cache_miss')
 
-                // Consulta no banco de dados
-                const { rows } = await fastify.pg.query(
-                    'SELECT id, nome, email FROM usuarios WHERE id = $1', [id]
-                )
+                const usuario = await fastify.prisma.usuario.findUnique({
+                    where: { id: Number(id) },
+                    select: {
+                        id: true,
+                        nome: true,
+                        email: true
+                    }
+                })
 
-                if (rows.length === 0) {
+                if (!usuario) {
                     span.setStatus({ code: SpanStatusCode.ERROR, message: 'Usuário inexistente' })
                     return reply.code(404).send({ error: 'Usuário não encontrado' })
                 }
 
-                const usuario = rows[0]
-
-                // Salva no cache para a próxima vez
+                // Salva no Redis e retorna
                 await fastify.redis.set(cacheKey, JSON.stringify(usuario), 'EX', 3600)
-
                 return usuario
 
             } catch (err) {

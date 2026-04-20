@@ -8,13 +8,15 @@
   },
   "scripts": {
     "test": "node --test test/**/*.test.js",
-    "start": "node -r ./instrumentation.mjs",
-    "dev": "fastify start -w -l info -P --options server.js -- --require ./instrumentation.mjs",
-    "migrate:up": "ley up",
-    "migrate:status": "ley status"
+    "start": "node --import ./instrumentation.mjs server.js",
+    "dev": "fastify start -w -l info -P --options server.js -- --import ./instrumentation.mjs",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "postinstall": "prisma generate"
   },
   "keywords": [],
-  "author": "",
+  "author": "Savio de Carvalho Soares",
   "license": "ISC",
   "dependencies": {
     "@fastify/autoload": "^6.0.0",
@@ -33,10 +35,14 @@
     "@opentelemetry/sdk-node": "^0.214.0",
     "@opentelemetry/sdk-trace-node": "^2.6.1",
     "@opentelemetry/semantic-conventions": "^1.40.0",
+    "@prisma/client": "6.4.1",
     "bcrypt": "^6.0.0",
     "fastify": "^5.0.0",
     "fastify-cli": "^7.4.1",
-    "fastify-plugin": "^5.0.0",
-    "ley": "^0.8.1"
+    "fastify-plugin": "^5.0.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "prisma": "^6.4.1"
   }
 }

@@ -1,11 +1,17 @@
 FROM node:20-alpine
 
+RUN apk add --no-cache openssl libc6-compat
+
 WORKDIR /usr/src/app
 
 COPY package*.json ./
-RUN npm install --production
+
+COPY prisma ./prisma/
+
+RUN npm install
 
 COPY . .
 
 EXPOSE 3000
-CMD ["node", "--require", "./instrumentation.mjs", "server.js"]
+
+CMD ["sh", "-c", "npx prisma migrate dev --name init && node --import ./instrumentation.mjs server.js"]

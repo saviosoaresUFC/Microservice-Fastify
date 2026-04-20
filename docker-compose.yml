@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   # App Fastify
   app:
     build: .
     container_name: fastify_app
-    command: sh -c "npm run migrate:up && node --import ./instrumentation.mjs server.js"
+    command: sh -c "npx prisma migrate dev --name init && node --import ./instrumentation.mjs server.js"
     ports:
       - "3000:3000"
     environment:

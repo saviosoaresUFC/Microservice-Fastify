@@ -1,7 +1,7 @@
 'use strict'
 
 const bcrypt = require('bcrypt')
-const { trace } = require('@opentelemetry/api')
+const { trace, SpanStatusCode } = require('@opentelemetry/api')
 const tracer = trace.getTracer('usuario-service')
 
 module.exports = async function (fastify, opts) {
@@ -22,30 +22,36 @@ module.exports = async function (fastify, opts) {
 
         return tracer.startActiveSpan('usuarios.cadastrar', async (span) => {
             try {
-                // Verifica se o e-mail já existe
-                const userExists = await fastify.pg.query(
-                    'SELECT id FROM usuarios WHERE email = $1', [email]
-                )
+                const passwordHash = await bcrypt.hash(senha, 10)
 
-                if (userExists.rows.length > 0) {
+                const novoUsuario = await fastify.prisma.usuario.create({
+                    data: {
+                        nome,
+                        email,
+                        senha: passwordHash
+                    },
+                    select: {
+                        id: true,
+                        nome: true,
+                        email: true,
+                        createdAt: true
+                    }
+                })
+
+                span.setAttribute('usuario.id', novoUsuario.id)
+
+                return reply.code(201).send(novoUsuario)
+
+            } catch (err) {
+                span.recordException(err)
+                span.setStatus({ code: SpanStatusCode.ERROR, message: err.message })
+
+                // Prisma (P2002 = Unique Constraint)
+                if (err.code === 'P2002') {
                     span.addEvent('cadastro_falhou_email_duplicado')
                     throw fastify.httpErrors.conflict('E-mail já cadastrado no sistema')
                 }
 
-                // Hash da senha
-                const passwordHash = await bcrypt.hash(senha, 10)
-
-                // Insere o usuário no Banco
-                const { rows } = await fastify.pg.query(
-                    'INSERT INTO usuarios (nome, email, senha) VALUES ($1, $2, $3) RETURNING id, nome, email',
-                    [nome, email, passwordHash]
-                )
-
-                span.setAttribute('usuario.id', rows[0].id)
-                reply.code(201)
-                return rows[0]
-            } catch (err) {
-                span.recordException(err)
                 throw err
             } finally {
                 span.end()

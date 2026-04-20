@@ -21,38 +21,38 @@ module.exports = async function (fastify, opts) {
         const { email, senha } = request.body
 
         // Busca o usuário pelo email
-        const { rows } = await fastify.pg.query(
-            'SELECT id, nome, email, senha FROM usuarios WHERE email = $1',
-            [email]
-        )
+        const usuario = await fastify.prisma.usuario.findUnique({
+            where: { email }
+        })
 
-        if (rows.length === 0) {
-            // Retorne 401 genérico para não dar pista se o email existe ou não
+        if (!usuario) {
             throw fastify.httpErrors.unauthorized('Usuário ou senha inválidos')
         }
 
-        const usuario = rows[0]
-
-        // Envolvendo a verificação da senha em um span manual para monitorar latência
+        // Verificação de senha
         const senhaValida = await tracer.startActiveSpan('auth.verify_password', async (innerSpan) => {
-            const result = await bcrypt.compare(senha, usuario.senha)
-            innerSpan.end()
-            return result
+            try {
+                const result = await bcrypt.compare(senha, usuario.senha)
+                return result
+            } finally {
+                innerSpan.end()
+            }
         })
 
         if (!senhaValida) {
             const activeSpan = trace.getActiveSpan()
-            activeSpan.setStatus({ code: SpanStatusCode.ERROR, message: 'Senha inválida' })
+            if (activeSpan) {
+                activeSpan.setStatus({ code: SpanStatusCode.ERROR, message: 'Senha inválida' })
+            }
             throw fastify.httpErrors.unauthorized('Usuário ou senha inválidos')
         }
 
-        // Gera o Token com Payload enxuto (ID e Email)
+        // Geração de token
         const auth_token = fastify.jwt.sign({
             id: usuario.id,
             email: usuario.email
         })
 
-        // Retorna o token conforme você pediu
         return { auth_token }
     })
 }
